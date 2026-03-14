@@ -8,3 +8,4 @@ data/watchlist_compare_state.json
 exports/
 
 .DS_Store
+.pytest_cache/

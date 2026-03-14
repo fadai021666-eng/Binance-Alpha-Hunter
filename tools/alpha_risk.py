@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -12,6 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from lib.binance_alpha import BinanceAlphaError, get_candidate_snapshot  # noqa: E402
+from lib.output import render  # noqa: E402
 from lib.rules import build_risk_report  # noqa: E402
 
 
@@ -44,12 +44,7 @@ def main() -> int:
             "message": str(exc),
         }
 
-    rendered = (
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-        if args.raw
-        else json.dumps(payload, ensure_ascii=False, indent=2)
-    )
-    print(rendered)
+    print(render(payload, args.raw))
     return 0 if payload.get("status") != "error" else 1
 
 

@@ -37,8 +37,8 @@ from lib.rules import (  # noqa: E402
     build_narration_bundle,
     build_presentation_summary,
 )
-from tools.alpha_plan import _build_recent_trade_summary, _load_normalized_paper_trades  # noqa: E402
-from tools.alpha_watchlist import build_watchlist_compare_snapshot  # noqa: E402
+from lib.paper_trades import build_recent_trade_summary, load_normalized_paper_trades  # noqa: E402
+from lib.watchlist import build_watchlist_compare_snapshot  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -188,7 +188,7 @@ def _build_data_status(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _build_export_bundle(payload: dict[str, Any], args, exported_at: str) -> dict[str, Any]:
     data_status = _build_data_status(payload)
-    recent_trade_summary = _build_recent_trade_summary(_load_normalized_paper_trades())
+    recent_trade_summary = build_recent_trade_summary(load_normalized_paper_trades())
     try:
         watchlist_compare_summary = build_watchlist_compare_snapshot(
             mode=payload.get("mode", args.mode),
@@ -310,7 +310,7 @@ def _build_manifest(bundle: dict[str, Any], bundle_name: str, latest_copy: bool)
             if recent_trade_summary
             else None
         ),
-        "trade_history_count": len(_load_normalized_paper_trades()),
+        "trade_history_count": len(load_normalized_paper_trades()),
         "tracking_snapshot": (
             {
                 "quick_summary": watchlist_compare_summary.get("quick_summary"),

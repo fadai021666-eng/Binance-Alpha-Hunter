@@ -10,12 +10,18 @@ from uuid import uuid4
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
-PAPER_TRADES_PATH = DATA_DIR / "paper_trades.json"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from lib.binance_alpha import BinanceAlphaError, get_candidate_snapshot, list_alpha_candidates  # noqa: E402
+from lib.output import render  # noqa: E402
+from lib.paper_trades import (  # noqa: E402
+    build_recent_trade_summary,
+    load_normalized_paper_trades,
+    load_paper_trades,
+    normalize_trade_record,
+    save_paper_trades,
+)
 from lib.rules import build_discover_candidates, build_risk_report, build_trade_plan  # noqa: E402
 
 
@@ -60,113 +66,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _load_paper_trades() -> list[dict]:
-    if not PAPER_TRADES_PATH.exists():
-        return []
-    return json.loads(PAPER_TRADES_PATH.read_text(encoding="utf-8"))
-
-
-def _save_paper_trades(items: list[dict]) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    PAPER_TRADES_PATH.write_text(
-        json.dumps(items, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-
-
-def _render(payload: dict, raw: bool) -> str:
-    if raw:
-        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    return json.dumps(payload, ensure_ascii=False, indent=2)
-
-
 def _normalize_symbol(symbol: str) -> str:
     return symbol.strip().upper()
 
 
-def _build_recent_trade_summary(records: list[dict]) -> dict | None:
-    if not records:
-        return None
-    latest = records[0]
-    symbol_counts: dict[str, int] = {}
-    for record in records:
-        symbol = str(record.get("symbol") or "")
-        symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
-    top_symbols = sorted(symbol_counts.items(), key=lambda item: item[1], reverse=True)[:3]
-    return {
-        "latest_trade_id": latest.get("trade_id"),
-        "latest_symbol": latest.get("symbol"),
-        "latest_style": latest.get("style"),
-        "latest_action": latest.get("action"),
-        "latest_created_at": latest.get("created_at"),
-        "latest_confidence": latest.get("confidence"),
-        "latest_plan_reason": latest.get("plan_reason"),
-        "latest_risk_summary": (latest.get("risk_report") or {}).get("risk_summary"),
-        "latest_execution_summary": latest.get("execution_summary"),
-        "symbol": latest.get("symbol"),
-        "style": latest.get("style"),
-        "action": latest.get("action"),
-        "created_at": latest.get("created_at"),
-        "confidence": latest.get("confidence"),
-        "plan_reason": latest.get("plan_reason"),
-        "risk_summary": (latest.get("risk_report") or {}).get("risk_summary"),
-        "execution_summary": latest.get("execution_summary"),
-        "top_symbols": [{"symbol": symbol, "count": count} for symbol, count in top_symbols],
-    }
-
-
-def _normalize_trade_record(record: dict, index: int) -> dict:
-    risk_report = record.get("risk_report") or {}
-    if not isinstance(risk_report, dict):
-        risk_report = {}
-    risk_flags = record.get("risk_flags") or risk_report.get("risk_flags") or []
-    if not isinstance(risk_flags, list):
-        risk_flags = []
-    entry = record.get("entry") or {}
-    position_size = record.get("position_size") or {}
-    action = record.get("action") or record.get("side") or "buy"
-    style = record.get("style") or "balanced"
-    symbol = record.get("symbol") or ""
-    created_at = record.get("created_at") or ""
-    execution_summary = record.get("execution_summary")
-    if not execution_summary:
-        execution_summary = (
-            f"{symbol} 的 paper trade 已记录，"
-            f"方向 {action}，风格 {style}。"
-        )
-    return {
-        "trade_id": record.get("trade_id") or f"legacy-{index + 1}",
-        "symbol": symbol,
-        "style": style,
-        "action": action,
-        "amount_usd": record.get("amount_usd"),
-        "mode": record.get("mode", "paper"),
-        "created_at": created_at,
-        "entry": entry,
-        "stop_loss": record.get("stop_loss"),
-        "take_profit": record.get("take_profit"),
-        "position_size": position_size,
-        "invalidation": record.get("invalidation"),
-        "confidence": record.get("confidence"),
-        "plan_reason": record.get("plan_reason"),
-        "risk_report": risk_report,
-        "risk_flags": risk_flags,
-        "suggested_mode": record.get("suggested_mode") or risk_report.get("suggested_mode"),
-        "opportunity_score": record.get("opportunity_score"),
-        "tags": record.get("tags") or [],
-        "execution_summary": execution_summary,
-    }
-
-
-def _load_normalized_paper_trades() -> list[dict]:
-    raw_items = _load_paper_trades()
-    items = [_normalize_trade_record(item, index) for index, item in enumerate(raw_items)]
-    items.sort(key=lambda item: item.get("created_at") or "", reverse=True)
-    return items
-
-
 def _build_history_payload(symbol: str, limit: int | None, summary: bool) -> dict:
-    records = _load_normalized_paper_trades()
+    records = load_normalized_paper_trades()
     normalized_symbol = _normalize_symbol(symbol) if symbol else ""
     if normalized_symbol:
         records = [item for item in records if _normalize_symbol(str(item.get("symbol") or "")) == normalized_symbol]
@@ -193,7 +98,7 @@ def _build_history_payload(symbol: str, limit: int | None, summary: bool) -> dic
             "limit": limit,
         },
         "quick_summary": quick_summary,
-        "recent_trade_summary": _build_recent_trade_summary(records),
+        "recent_trade_summary": build_recent_trade_summary(records),
     }
 
     if summary:
@@ -248,10 +153,10 @@ def _build_plan_context(symbol: str, style: str) -> dict:
     plan["data_source"] = snapshot["fetch_meta"]["data_source"]
     plan["stale"] = snapshot["fetch_meta"]["stale"]
     plan["fetch_warnings"] = snapshot["fetch_meta"]["fetch_warnings"]
-    plan["recent_trade_summary"] = _build_recent_trade_summary(
+    plan["recent_trade_summary"] = build_recent_trade_summary(
         [
             item
-            for item in _load_normalized_paper_trades()
+            for item in load_normalized_paper_trades()
             if _normalize_symbol(str(item.get("symbol") or "")) == _normalize_symbol(plan["symbol"])
         ]
     )
@@ -301,7 +206,7 @@ def _execute(symbol: str, side: str, amount_usd: float, style: str, mode: str, c
         payload["message"] = "MVP 当前只支持 paper trade，占位保留了 Spot / Futures 接口。"
         return payload
 
-    items = _load_paper_trades()
+    items = load_paper_trades()
     created_at = datetime.now(timezone.utc).isoformat()
     trade_id = f"paper-{created_at.replace(':', '').replace('-', '').replace('.', '')}-{uuid4().hex[:8]}"
     execution_summary = (
@@ -334,13 +239,13 @@ def _execute(symbol: str, side: str, amount_usd: float, style: str, mode: str, c
         "execution_summary": execution_summary,
     }
     items.append(record)
-    _save_paper_trades(items)
+    save_paper_trades(items)
 
     payload["status"] = "paper_executed"
     payload["message"] = "已记录到 paper trade 日志。"
-    payload["record"] = _normalize_trade_record(record, len(items) - 1)
+    payload["record"] = normalize_trade_record(record, len(items) - 1)
     payload["paper_trade_count"] = len(items)
-    payload["recent_trade_summary"] = _build_recent_trade_summary(_load_normalized_paper_trades())
+    payload["recent_trade_summary"] = build_recent_trade_summary(load_normalized_paper_trades())
     return payload
 
 
@@ -349,16 +254,16 @@ def main() -> int:
     try:
         if args.command == "plan":
             payload = _make_plan(args.symbol, args.style)
-            print(_render(payload, args.raw))
+            print(render(payload, args.raw))
             return 0
 
         if args.command == "history":
             payload = _build_history_payload(args.symbol, args.limit, args.summary)
-            print(_render(payload, args.raw))
+            print(render(payload, args.raw))
             return 0
 
         payload = _execute(args.symbol, args.side, args.amount_usd, args.style, args.mode, args.confirm)
-        print(_render(payload, args.raw))
+        print(render(payload, args.raw))
         return 0 if payload.get("status") != "not_implemented" else 1
     except BinanceAlphaError as exc:
         payload = {
@@ -366,7 +271,7 @@ def main() -> int:
             "status": "error",
             "message": str(exc),
         }
-        print(_render(payload, getattr(args, "raw", False)))
+        print(render(payload, getattr(args, "raw", False)))
         return 1
 
 
