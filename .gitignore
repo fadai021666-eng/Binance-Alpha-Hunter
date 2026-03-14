@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+
+data/cache/
+data/paper_trades.json
+data/watchlist_compare_state.json
+
+exports/
+
+.DS_Store

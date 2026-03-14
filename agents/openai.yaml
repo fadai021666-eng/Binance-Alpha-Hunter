@@ -1,0 +1,4 @@
+interface:
+  display_name: "Binance Alpha Hunter"
+  short_description: "发现 Binance Alpha 候选、评估风险并生成交易计划"
+  default_prompt: "使用 $binance-alpha-hunter 发现 Binance Alpha 候选并给出风险摘要和交易计划。"
