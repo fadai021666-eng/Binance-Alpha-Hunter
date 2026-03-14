@@ -24,12 +24,58 @@ Binance Alpha 场景下，用户通常会连续做几件事：
 
 ## 核心能力
 
-- **机会发现**：发现 Binance Alpha 候选标的，输出机会分、标签和解释，支持 `momentum / safe / early / contrarian` 四种筛选模式。
-- **风险判断**：输出波动风险、流动性风险和新手适配度，并给出 `watch / spot / futures` 建议模式。
-- **交易计划**：支持 `conservative / balanced / aggressive`，输出 entry、stop loss、take profit、position size、invalidation、confidence 和 plan_reason。
-- **Paper Trade 闭环**：支持模拟执行、执行快照留档、历史记录和 `recent_trade_summary`。
-- **Watchlist 跟踪**：支持 `add / remove / list / compare`，能持续观察 `score_delta / risk_delta / status_change / highlights`。
-- **比赛展示与导出**：支持 `presentation / narration / competition_mode`，并自动导出 `submission.json / voiceover.txt / cover.md / manifest.json`。
+### 1. 机会发现
+- 发现 Binance Alpha 候选标的
+- 基于机会分、标签和解释输出 top picks
+- 支持不同筛选模式：
+  - `momentum`
+  - `safe`
+  - `early`
+  - `contrarian`
+
+### 2. 风险判断
+- 输出波动风险、流动性风险和新手适配度
+- 给出建议模式：
+  - `watch`
+  - `spot`
+  - `futures`
+
+### 3. 交易计划
+- 支持：
+  - `conservative`
+  - `balanced`
+  - `aggressive`
+- 输出：
+  - entry
+  - stop loss
+  - take profit
+  - position size
+  - invalidation
+  - confidence
+  - plan_reason
+
+### 4. Paper Trade 闭环
+- 支持模拟执行
+- 自动保留执行快照
+- 支持历史记录和 recent trade summary
+
+### 5. Watchlist 跟踪
+- 支持 add / remove / list / compare
+- 可以跟踪：
+  - `score_delta`
+  - `risk_delta`
+  - `status_change`
+  - `highlights`
+
+### 6. 比赛展示与导出
+- 支持 `presentation`
+- 支持 `narration`
+- 支持 `competition_mode`
+- 自动导出：
+  - `submission.json`
+  - `voiceover.txt`
+  - `cover.md`
+  - `manifest.json`
 
 ---
 
@@ -56,7 +102,7 @@ Binance Alpha 场景下，用户通常会连续做几件事：
 python ~/.openclaw/skills/binance-alpha-hunter/tools/alpha_discover.py --competition-mode
 ```
 
-这条命令会自动启用：
+它会自动启用：
 
 - `presentation`
 - `narration`
@@ -64,12 +110,39 @@ python ~/.openclaw/skills/binance-alpha-hunter/tools/alpha_discover.py --competi
 - `duration=60`
 - `export`
 - `export_format=both`
+- `sort=score`
 
-并自动生成：
+并自动生成完整比赛包。
 
-- submission bundle
-- latest_submission 固定副本
-- 适合录屏和投稿的说明页、旁白稿与 manifest
+## 导出结果
+
+运行 `--competition-mode` 后，导出目录中会包含：
+
+- `submission.json`：完整结构化结果
+- `voiceover.txt`：可直接录屏念稿
+- `cover.md`：比赛展示说明页
+- `manifest.json`：自动化读取入口
+
+同时会刷新：
+
+- `exports/LATEST.txt`
+- `exports/latest_submission/`
+
+---
+
+## 数据状态与稳定性
+
+为了让演示链路更稳，项目补了这些机制：
+
+- 自动重试
+- gzip / JSON 解码容错
+- 本地缓存回退
+- `data_source`
+- `stale`
+- `fetch_warnings`
+- `degraded_components`
+
+即使 Binance 公共接口有瞬时波动，也尽量保证 discover、competition mode 和导出链路不中断。
 
 ---
 
@@ -97,7 +170,7 @@ binance-alpha-hunter/
     demo_prompts.md
 ```
 
-## 命令与接口
+## 常用命令
 
 下面保留完整命令示例，方便本地测试和演示。
 
