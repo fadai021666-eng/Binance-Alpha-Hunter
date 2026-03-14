@@ -436,6 +436,20 @@ def _presentation_verdict(item: dict[str, Any]) -> str:
     return "观察为主"
 
 
+def _strip_terminal_punctuation(text: str) -> str:
+    return text.strip().rstrip("。；，,; ")
+
+
+def _build_summary_text(explain: list[str], fallback: str) -> str:
+    parts = [_strip_terminal_punctuation(item) for item in explain if item]
+    parts = [item for item in parts if item][:2]
+    if not parts:
+        return fallback
+    if len(parts) == 1:
+        return parts[0] + "。"
+    return f"{parts[0]}，且{parts[1]}。"
+
+
 def _build_market_view(items: list[dict[str, Any]], mode: str) -> str:
     if not items:
         return f"当前 {mode} 模式下没有足够强的 Alpha 候选，市场更适合等待。"
@@ -481,7 +495,7 @@ def build_presentation_summary(items: list[dict[str, Any]], mode: str) -> dict[s
     top_picks = []
     for index, item in enumerate(top_candidates[:3], start=1):
         explain = list(item.get("explain") or [])
-        summary = "；".join(explain[:2]) if explain else item.get("reason", "")
+        summary = _build_summary_text(explain, item.get("reason", ""))
         top_picks.append(
             {
                 "rank": index,
@@ -497,7 +511,7 @@ def build_presentation_summary(items: list[dict[str, Any]], mode: str) -> dict[s
             "symbol": item["symbol"],
             "score": item["opportunity_score"],
             "reason": item["reason"],
-            "summary": "；".join((item.get("explain") or [])[:2]) or item["reason"],
+            "summary": _build_summary_text(list(item.get("explain") or []), item["reason"]),
         }
         for item in ranked_items
         if "watch_only" in (item.get("tags") or [])
@@ -599,6 +613,7 @@ def build_narration_bundle(
             {"segment": "重点标的", "seconds": "5-10", "prompt": content_body},
             {"segment": "风险提示", "seconds": "10-15", "prompt": risk_notice},
         ]
+        preserve_demo_prompts = False
     elif duration == 60:
         content_open = market_view
         content_body = top_pick_line
@@ -616,6 +631,7 @@ def build_narration_bundle(
             {"segment": "观察名单", "seconds": "42-52", "prompt": content_watch},
             {"segment": "风险提示与结尾", "seconds": "52-60", "prompt": content_risk},
         ]
+        preserve_demo_prompts = False
     else:
         content_open = market_view
         content_body = "今天优先讲的标的是" + "、".join(
@@ -633,6 +649,7 @@ def build_narration_bundle(
             {"segment": "观察名单", "seconds": "22-27", "prompt": content_watch},
             {"segment": "风险提示", "seconds": "27-30", "prompt": content_risk},
         ]
+        preserve_demo_prompts = False
 
     if voice_style == "energetic":
         opening = f"下面这版是 Binance Alpha Hunter 的 {mode} 高节奏展示，我们直接看机会点。"
@@ -660,23 +677,60 @@ def build_narration_bundle(
         tone_notes = "节奏更快，更有推进感，适合短视频、宣传片段、录屏亮点展示。"
         use_case = "适合短视频、宣传展示、节奏更快的录屏解说。"
     elif voice_style == "competition":
-        opening = f"这是我用 Binance Alpha Hunter 做出的 {mode} 模式作品展示，重点看机会发现和风控闭环。"
-        script = (
-            f"{content_open}"
-            f"{content_body}"
-            f"{content_watch}"
-            f"{content_risk}"
-            + (
-                "这份结果不是只给数据，而是把候选发现、筛选解释和执行前风控串成了一条完整链路。"
-                if duration >= 30
-                else ""
+        opening = f"这是 Binance Alpha Hunter 的 {mode} 比赛展示，重点看机会发现和风控闭环。"
+        if duration == 60:
+            competition_picks = "、".join(
+                f"{item['symbol']}（{item['verdict']}）" for item in top_picks[:2]
+            ) or top_symbols
+            competition_pick_reason = ""
+            if top_picks:
+                competition_pick_reason = f"{top_picks[0]['symbol']} 的理由是{top_picks[0].get('summary') or ''}"
+            if len(top_picks) > 1:
+                competition_pick_reason += f"{top_picks[1]['symbol']} 则是{top_picks[1].get('summary') or ''}"
+            competition_risk_line = (
+                "没有明显只看不动名单，但执行前仍要先看风险。"
+                if not watch_only
+                else watch_line + short_risk_notice
             )
-        ).strip()
+            competition_data_line = (
+                f"当前有降级回退，主要涉及：{'、'.join(degraded_components_zh)}。"
+                if degraded_components_zh
+                else "当前数据链路正常。"
+            )
+            script = (
+                f"{content_open}"
+                f"这轮优先看 {competition_picks}。"
+                f"{competition_pick_reason}"
+                f"{competition_risk_line}"
+                f"{competition_data_line}"
+                "这份结果已经把发现、筛选和执行前风控串成闭环。"
+            ).strip()
+        else:
+            script = (
+                f"{content_open}"
+                f"{content_body}"
+                f"{content_watch}"
+                f"{content_risk}"
+                + (
+                    "这份结果不是只给数据，而是把候选发现、筛选解释和执行前风控串成了一条完整链路。"
+                    if duration >= 30
+                    else ""
+                )
+            ).strip()
         closing = (
             "如果继续展开，我会先验证风险摘要，再基于风格生成交易计划，形成完整闭环。"
             if duration >= 30
             else "下一步我会把风险和计划闭环补齐。"
         )
+        if duration == 60:
+            demo_script = [
+                {"segment": "开场", "seconds": "0-8", "prompt": opening},
+                {"segment": "市场判断", "seconds": "8-18", "prompt": content_open},
+                {"segment": "重点标的", "seconds": "18-36", "prompt": f"这轮优先看 {competition_picks}。{competition_pick_reason}"},
+                {"segment": "观察名单", "seconds": "36-46", "prompt": competition_risk_line},
+                {"segment": "风险提示与结尾", "seconds": "46-60", "prompt": f"{competition_data_line}{closing}"},
+            ]
+            preserve_demo_prompts = True
         short_caption = (
             f"Binance Alpha Hunter 作品展示：{mode} 模式下重点关注 {top_symbols}。"
             "不仅发现机会，也把风险和执行边界说明白。"
@@ -709,15 +763,16 @@ def build_narration_bundle(
     script = script.replace("。。", "。").replace("..", ".").strip()
     estimated_words = _estimate_spoken_words(opening + script + closing)
 
-    for segment in demo_script:
-        if segment["segment"] == "开场":
-            segment["prompt"] = opening
-        elif segment["segment"] in {"风险提示与结尾", "风险提示"} and duration == 60:
-            segment["prompt"] = content_risk + closing
-        elif segment["segment"] == "风险提示" and duration in {15, 30}:
-            segment["prompt"] = content_risk + (closing if duration == 15 else "")
-        elif segment["segment"] == "开场和判断":
-            segment["prompt"] = content_open
+    if not preserve_demo_prompts:
+        for segment in demo_script:
+            if segment["segment"] == "开场":
+                segment["prompt"] = opening
+            elif segment["segment"] in {"风险提示与结尾", "风险提示"} and duration == 60:
+                segment["prompt"] = content_risk + closing
+            elif segment["segment"] == "风险提示" and duration in {15, 30}:
+                segment["prompt"] = content_risk + (closing if duration == 15 else "")
+            elif segment["segment"] == "开场和判断":
+                segment["prompt"] = content_open
 
     return {
         "voice_style": voice_style,
